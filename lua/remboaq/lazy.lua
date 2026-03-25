@@ -93,13 +93,15 @@ require("lazy").setup({
         end
     },
 
-    -- 6. Vim Fugitive (Git Integration)
+    -- 6. LazyGit (Visual Git TUI)
     {
-        "tpope/vim-fugitive",
-        config = function()
-            vim.keymap.set("n", "<leader>gs", vim.cmd.Git)
-        end
-    },
+        "kdheepak/lazygit.nvim",
+        dependencies = { "nvim-lua/plenary.nvim" },
+        keys = {
+            -- Press Leader + lg to open LazyGit
+            { "<leader>lg", "<cmd>LazyGit<cr>", desc = "Open LazyGit" },
+        },
+    }, 
 
     -- 7. LSP Support & Autocompletion (The IDE Experience)
     {
