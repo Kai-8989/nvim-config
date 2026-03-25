@@ -18,17 +18,57 @@ vim.opt.rtp:prepend(lazypath)
 
 -- Initialize lazy with an empty plugin list
 require("lazy").setup({
-    -- 1. The Colorscheme
-    {
-        "rose-pine/neovim",
-        name = "rose-pine",
+
+    -- 1. Color Theme 
+        {
+        'AlexvZyl/nordic.nvim',
+        lazy = false,
+        priority = 1000,
         config = function()
-            vim.cmd("colorscheme rose-pine")
+            -- ALL setup code goes INSIDE this config function
+            require('nordic').setup({
+                -- This callback overrides the colors for a darker background
+                on_palette = function(palette) 
+                    palette.bg = "#000000" -- Changes the main editor background
+                    palette.bg_float = "#151820" -- Changes the floating window background
+                    palette.black0 = "#000000" -- Changes the terminal/darkest black
+                end,
+                after_palette = function(palette) end,
+                on_highlight = function(highlights, palette) end,
+                bold_keywords = false,
+                italic_comments = true,
+                transparent = {
+                    bg = false,
+                    float = false,
+                },
+                bright_border = false,
+                reduced_blue = true,
+                swap_backgrounds = false,
+                cursorline = {
+                    bold = false,
+                    bold_number = true,
+                    theme = 'dark',
+                    blend = 0.85,
+                },
+                visual = {
+                    bold = false,
+                    bold_number = true,
+                    theme = 'dark',
+                    blend = 0.85,
+                },
+                noice = { style = 'classic' },
+                telescope = { style = 'flat' },
+                leap = { dim_backdrop = false },
+                ts_context = { dark_background = true }
+            })
+
+            -- Apply the theme after setting it up
+            require('nordic').load()
         end
     },
 
     -- 2. Telescope (Fuzzy Finder)
-    {
+        {
         'nvim-telescope/telescope.nvim', 
         tag = '0.1.8',
         dependencies = { 'nvim-lua/plenary.nvim' },
@@ -148,5 +188,24 @@ require("lazy").setup({
                 })
             })
         end
-    }
+    },
+    -- 8. Oil (The Ultimate File Explorer)
+    {
+        'stevearc/oil.nvim',
+        -- Optional dependencies for file icons
+        dependencies = { "nvim-tree/nvim-web-devicons" },
+        config = function()
+            require("oil").setup({
+                -- This automatically replaces Netrw!
+                default_file_explorer = true,
+                -- Show hidden files by default
+                view_options = {
+                    show_hidden = true,
+                },
+            })
+
+            -- Overwrite your old <leader>pv remap to open Oil instead!
+            vim.keymap.set("n", "<leader>pv", "<cmd>Oil<CR>", { desc = "Open Oil file explorer" })
+        end
+    },
 })
