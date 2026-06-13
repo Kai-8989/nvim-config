@@ -83,6 +83,36 @@ require("lazy").setup({
             for _, group in ipairs(keyword_groups) do
                 vim.api.nvim_set_hl(0, group, { fg = red, bold = true })
             end
+
+            -- Syntax color balance: variables make up most of the code, so they
+            -- stay at the plain foreground — color is reserved for structure
+            -- (functions) and rare tokens (builtins, self, class names) so it
+            -- draws the eye instead of turning the buffer into a rainbow.
+            -- The @lsp.* groups are semantic tokens from pyright — they take
+            -- priority over treesitter, so they are linked back to the
+            -- treesitter groups to keep colors consistent.
+            local fg = '#c8d3f5' -- tokyonight-moon foreground
+            local syntax_overrides = {
+                ['@variable']             = { fg = fg },                       -- plain on purpose
+                ['@variable.member']      = { fg = fg },                       -- self.attr: plain
+                ['@variable.parameter']   = { fg = '#ffc777', italic = true }, -- def signature only
+                ['@variable.builtin']     = { fg = '#ff003c', italic = true }, -- self, cls
+                ['@function']             = { fg = '#82aaff', bold = true },   -- blue
+                ['@function.call']        = { fg = '#82aaff' },
+                ['@function.method']      = { fg = '#82aaff', bold = true },
+                ['@function.method.call'] = { fg = '#82aaff' },
+                ['@function.builtin']     = { fg = '#00e5e5' },                -- print, len, ...
+                ['@constructor']          = { fg = '#c099ff' },                -- class names
+                ['@lsp.type.variable']    = { link = '@variable' },
+                ['@lsp.type.parameter']   = { link = '@variable' },            -- params plain in body
+                ['@lsp.type.property']    = { link = '@variable.member' },
+                ['@lsp.type.function']    = { link = '@function' },
+                ['@lsp.type.method']      = { link = '@function.method' },
+                ['@lsp.type.class']       = { link = '@constructor' },
+            }
+            for group, opts in pairs(syntax_overrides) do
+                vim.api.nvim_set_hl(0, group, opts)
+            end
         end,
     },
 
@@ -100,12 +130,20 @@ require("lazy").setup({
             vim.keymap.set('n', '<leader>ps', function()
                 builtin.grep_string({ search = vim.fn.input("Grep > ") })
             end)
+            -- live_grep re-runs ripgrep on every keystroke, so results update
+            -- as you type instead of after submitting a fixed query.
+            vim.keymap.set('n', '<leader>pg', builtin.live_grep, {})
         end,
     },
 
     -- ── 3. Treesitter (Syntax Highlighting) ──────────────────────────────────
+    -- Pinned to `master`: the rewritten `main` branch requires Neovim 0.12+
+    -- (it calls vim.list.unique) and drops the configs.setup API used below.
+    -- Without a working treesitter, Python falls back to regex highlighting
+    -- and most identifiers render plain white.
     {
         "nvim-treesitter/nvim-treesitter",
+        branch = "master",
         -- :TSUpdate keeps grammar parsers in sync with the plugin version.
         build = ":TSUpdate",
         config = function()
@@ -117,7 +155,11 @@ require("lazy").setup({
             end
 
             configs.setup({
-                ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "python" },
+                ensure_installed = {
+                    "c", "lua", "vim", "vimdoc", "query", "python",
+                    -- Web stack: tsx covers React's JSX syntax in .jsx/.tsx files.
+                    "javascript", "typescript", "tsx", "html", "css", "json",
+                },
                 -- async install avoids blocking the editor on first launch.
                 sync_install = false,
                 auto_install = true,
@@ -140,10 +182,11 @@ require("lazy").setup({
             vim.keymap.set("n", "<leader>a", mark.add_file)
             vim.keymap.set("n", "<C-e>",     ui.toggle_quick_menu)
 
-            vim.keymap.set("n", "<C-h>", function() ui.nav_file(1) end)
-            vim.keymap.set("n", "<C-t>", function() ui.nav_file(2) end)
-            vim.keymap.set("n", "<C-n>", function() ui.nav_file(3) end)
-            vim.keymap.set("n", "<C-s>", function() ui.nav_file(4) end)
+            -- <leader>1 .. <leader>5 jump straight to harpoon slots 1-5.
+            for i = 1, 5 do
+                vim.keymap.set("n", "<leader>" .. i, function() ui.nav_file(i) end,
+                    { desc = "Harpoon: jump to file " .. i })
+            end
         end,
     },
 
@@ -217,7 +260,14 @@ require("lazy").setup({
             require('mason').setup({})
             require('mason-lspconfig').setup({
                 -- Servers listed here are auto-installed on first launch if missing.
-                ensure_installed = { 'lua_ls', 'pyright' },
+                ensure_installed = {
+                    'lua_ls',
+                    'pyright',  -- Python (covers FastAPI projects)
+                    'ts_ls',    -- JavaScript/TypeScript/React (gd, gr, completion in .js/.jsx/.tsx)
+                    'html',     -- HTML completion, tag auto-close hints
+                    'cssls',    -- CSS/SCSS/Less completion and validation
+                    'emmet_language_server', -- Emmet abbreviations (div.card>ul>li*3 + completion) in HTML/JSX/CSS
+                },
                 handlers = {
                     function(server_name)
                         require('lspconfig')[server_name].setup({})
@@ -310,6 +360,98 @@ require("lazy").setup({
                 },
             })
             vim.keymap.set("n", "<leader>pv", "<cmd>Oil<CR>", { desc = "Open Oil file explorer" })
+        end,
+    },
+
+    -- ── 9. Jupytext (.ipynb ⇄ plain Python) ──────────────────────────────────
+    -- Opens .ipynb files as a regular Python buffer using `# %%` cell markers
+    -- (percent format). The JSON never touches the buffer: reads convert on the
+    -- fly, and :w converts back into the original notebook, preserving outputs.
+    -- Because the buffer is plain Python, pyright, treesitter and completion
+    -- all work exactly as in a .py file.
+    -- Requires the `jupytext` CLI (pip install jupytext).
+    {
+        "GCBallesteros/jupytext.nvim",
+        -- Must load at startup so its BufReadCmd autocmd catches the first
+        -- .ipynb opened; lazy-loading would leave that file as raw JSON.
+        lazy = false,
+        config = function()
+            require("jupytext").setup({
+                style = "percent",
+            })
+        end,
+    },
+
+    -- ── 10. Molten (Jupyter Kernel Runner) ───────────────────────────────────
+    -- Attaches a buffer to a live Jupyter kernel and evaluates code through it,
+    -- REPL-style: state persists between runs just like notebook cells.
+    -- Requires pynvim and jupyter_client in the host python3.
+    -- :MoltenInit starts a kernel; outputs appear in a float below each cell.
+    {
+        "benlubas/molten-nvim",
+        version = "^1.0.0",
+        ft = { "python" },
+        -- Molten is a remote (Python) plugin: the manifest must be regenerated
+        -- whenever the plugin updates, or its commands silently disappear.
+        build = ":UpdateRemotePlugins",
+        init = function()
+            -- g: settings are read when the remote plugin starts, so they must
+            -- be set in init (before load), not in config (after load).
+            -- tmux can't render the kitty graphics protocol reliably, so image
+            -- output (matplotlib figures) is disabled; text output still works.
+            vim.g.molten_image_provider          = "none"
+            vim.g.molten_auto_open_output        = true
+            vim.g.molten_wrap_output             = true
+            vim.g.molten_output_win_max_height   = 20
+            -- Keep outputs visible as virtual text under the cell after the
+            -- float closes, mimicking the notebook's persistent output area.
+            vim.g.molten_virt_text_output        = true
+            vim.g.molten_virt_lines_off_by_1     = true
+        end,
+        config = function()
+            local opts = { silent = true }
+
+            -- Kernel lifecycle
+            vim.keymap.set("n", "<leader>ji", ":MoltenInit<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: init kernel" }))
+            vim.keymap.set("n", "<leader>jq", ":MoltenDeinit<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: stop kernel" }))
+            vim.keymap.set("n", "<leader>jR", ":MoltenRestart!<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: restart kernel (clear state)" }))
+
+            -- Evaluation
+            vim.keymap.set("n", "<leader>jl", ":MoltenEvaluateLine<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: run line" }))
+            vim.keymap.set("v", "<leader>jv", ":<C-u>MoltenEvaluateVisual<CR>gv<Esc>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: run selection" }))
+            vim.keymap.set("n", "<leader>jr", ":MoltenReevaluateCell<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: re-run cell under cursor" }))
+
+            -- Run the `# %%` cell the cursor is in (jupytext percent format).
+            -- Searches backward for the current marker and forward for the next
+            -- one to find the cell bounds, then evaluates that line range.
+            vim.keymap.set("n", "<leader>jj", function()
+                local first = vim.fn.search("^# %%", "bcnW")
+                local last  = vim.fn.search("^# %%", "nW")
+                first = (first == 0) and 1 or first + 1
+                last  = (last == 0) and vim.fn.line("$") or last - 1
+                if first > last then return end
+                vim.fn.MoltenEvaluateRange(first, last)
+            end, vim.tbl_extend("force", opts, { desc = "Jupyter: run current cell" }))
+
+            -- Output windows
+            vim.keymap.set("n", "<leader>jo", ":noautocmd MoltenEnterOutput<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: enter output window" }))
+            vim.keymap.set("n", "<leader>jh", ":MoltenHideOutput<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: hide output" }))
+            vim.keymap.set("n", "<leader>jd", ":MoltenDelete<CR>",
+                vim.tbl_extend("force", opts, { desc = "Jupyter: delete cell output" }))
+
+            -- Cell navigation between `# %%` markers.
+            vim.keymap.set("n", "]j", function() vim.fn.search("^# %%", "W") end,
+                vim.tbl_extend("force", opts, { desc = "Jupyter: next cell" }))
+            vim.keymap.set("n", "[j", function() vim.fn.search("^# %%", "bW") end,
+                vim.tbl_extend("force", opts, { desc = "Jupyter: previous cell" }))
         end,
     },
 })

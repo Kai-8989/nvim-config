@@ -16,6 +16,12 @@ vim.keymap.set("n", "<leader>Y", [["+Y]])
 -- whatever is currently in the clipboard.
 vim.keymap.set({"n", "v"}, "<leader>d", [["_d]])
 
+-- Quickfix navigation: after `gr` fills the quickfix list with references,
+-- cycle through them without leaving the code window. `zz` keeps each
+-- jump target vertically centered.
+vim.keymap.set("n", "<C-j>", "<cmd>cnext<CR>zz")
+vim.keymap.set("n", "<C-k>", "<cmd>cprev<CR>zz")
+
 -- ─── ROS2 LSP Setup ──────────────────────────────────────────────────────────
 -- Pyright runs in Neovim's inherited environment and cannot see ROS2 packages
 -- unless told where to find them. This command sources install/setup.bash to
